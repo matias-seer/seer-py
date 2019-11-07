@@ -8,6 +8,7 @@ import os
 from matplotlib.collections import LineCollection
 from matplotlib import gridspec
 from matplotlib import pyplot as plt
+from matplotlib import colors as mcolors
 import numpy as np
 import pandas as pd
 import requests
@@ -232,24 +233,27 @@ def get_channel_names_or_ids(metadata):
 
 
 # pylint:disable=too-many-locals
-def plot_eeg(x, y=None, pred=None, squeeze=5.0, scaling_factor=None):
-    if not isinstance(x, np.ndarray):
-        x = np.asarray(x)
 
-    if len(x.shape) < 2:
-        x = x.reshape(-1, 1)
+def plot_eeg(y, x=None, annot = None, pred=None, dt = None, squeeze=5.0, scaling_factor=None):
+    if not isinstance(y, np.ndarray):
+        y = np.asarray(y)
 
-    channels = x.shape[1]
-    x = np.flip(x, axis=1)
+    if len(y.shape) < 2:
+        y = y.reshape(-1, 1)
+    
+    if y.shape[1] > y.shape[0]:
+        y = y.transpose()
+
+    channels = y.shape[1]
     has_pred = 1 if pred is not None else 0
     grid_spec = gridspec.GridSpec(2, 1, height_ratios=[channels, 1])
-    ticks = np.arange(x.shape[0]).astype(np.float32)
+    ticks = x
     fig = plt.figure(figsize=(14, (channels + has_pred) * 2))
     fig.tight_layout()
     ticklocs = []
     ax2 = fig.add_subplot(grid_spec[0])
     if scaling_factor is None:
-        scaling_factor = np.nanmedian(np.abs(x)) * squeeze  # Crowd them a bit.
+        scaling_factor = np.nanmedian(np.abs(y)) * squeeze  # Crowd them a bit.
     y_bottom = -scaling_factor  # pylint: disable=invalid-unary-operand-type
     y_top = (channels) * scaling_factor
     ax2.set_ylim(y_bottom, y_top)
@@ -257,24 +261,27 @@ def plot_eeg(x, y=None, pred=None, squeeze=5.0, scaling_factor=None):
 
     segs = []
     for i in range(channels):
-        segs.append(np.hstack((ticks[:, np.newaxis], x[:, i, np.newaxis])))
+        segs.append(np.hstack((ticks[:, np.newaxis], y[:, i, np.newaxis])))
         ticklocs.append(i * scaling_factor)
 
     offsets = np.zeros((channels, 2), dtype=float)
-    offsets[:, 1] = ticklocs
+    #offsets[:, 1] = ticklocs  #uncomment to offset channels
+    
+    colors = [mcolors.to_rgba(c)
+          for c in plt.rcParams['axes.prop_cycle'].by_key()['color']]
 
-    lines = LineCollection(segs, offsets=offsets, transOffset=None, linewidths=(0.5))
+    lines = LineCollection(segs, offsets=offsets, transOffset=None, linewidths=(1), colors = colors)
     ax2.add_collection(lines)
 
-    if y is not None:
-        if len(y.shape) > 1:
-            for i in range(y.shape[-1]):
-                y_ticks = ticks.copy()
-                y_ticks[y[:, i].reshape(-1) == 0] = np.nan
-                ax2.fill_between(y_ticks, -1000, 1000, alpha=0.1)
+    if annot is not None:
+        if len(annot.shape) > 1:
+            for i in range(annot.shape[-1]):
+                a_ticks = ticks.copy()
+                a_ticks[annot[:, i].reshape(-1) == 0] = np.nan
+                ax2.fill_between(a_ticks, -1000, 1000, alpha=0.3)
         else:
-            ticks[y == 0] = np.nan
-            ax2.fill_between(ticks, -1000, 1000, alpha=0.1)
+            ticks[annot == 0] = np.nan
+            ax2.fill_between(ticks, -1000, 1000, alpha=0.3)
 
     if pred is not None:
         ax3 = fig.add_subplot(grid_spec[1])
